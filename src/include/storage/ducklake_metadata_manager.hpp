@@ -98,6 +98,10 @@ public:
 	explicit DuckLakeMetadataManager(DuckLakeTransaction &transaction);
 	virtual ~DuckLakeMetadataManager();
 
+	typedef unique_ptr<DuckLakeMetadataManager> (*create_t)(DuckLakeTransaction &transaction);
+
+	static bool Register(const string &name, create_t am);
+
 	static unique_ptr<DuckLakeMetadataManager> Create(DuckLakeTransaction &transaction);
 
 	virtual bool TypeIsNativelySupported(const LogicalType &type);

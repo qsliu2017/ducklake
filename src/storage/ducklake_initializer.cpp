@@ -51,6 +51,7 @@ string DuckLakeInitializer::GetAttachOptions() {
 
 void DuckLakeInitializer::Initialize() {
 	auto &transaction = DuckLakeTransaction::Get(context, catalog);
+	#if 0
 	// attach the metadata database
 	auto result =
 	    transaction.Query("ATTACH {METADATA_PATH} AS {METADATA_CATALOG_NAME_IDENTIFIER}" + GetAttachOptions());
@@ -59,6 +60,7 @@ void DuckLakeInitializer::Initialize() {
 		error_obj.Throw("Failed to attach DuckLake MetaData \"" + catalog.MetadataDatabaseName() + "\" at path + \"" +
 		                catalog.MetadataPath() + "\"");
 	}
+	#endif
 	// explicitly load all secrets - work-around to secret initialization bug
 	transaction.Query("FROM duckdb_secrets()");
 
@@ -70,9 +72,9 @@ void DuckLakeInitializer::Initialize() {
 	// after the metadata database is attached initialize the ducklake
 	// check if we are loading an existing DuckLake or creating a new one
 	// FIXME: verify that all tables are in the correct format instead
-	result = transaction.Query(
-	    "SELECT COUNT(*) FROM duckdb_tables() WHERE database_name={METADATA_CATALOG_NAME_LITERAL} AND "
-	    "schema_name={METADATA_SCHEMA_NAME_LITERAL} AND table_name LIKE 'ducklake_%'");
+	auto result = transaction.Query(
+	    "SELECT COUNT(*) FROM duckdb_tables() WHERE database_name='pgduckdb' AND "
+	    "schema_name='ducklake' AND table_name LIKE 'ducklake_%'");
 	if (result->HasError()) {
 		auto &error_obj = result->GetErrorObject();
 		error_obj.Throw("Failed to load DuckLake table data");

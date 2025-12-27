@@ -16,6 +16,7 @@
 #include "duckdb/planner/filter/optional_filter.hpp"
 #include "duckdb/planner/filter/in_filter.hpp"
 #include "duckdb/planner/expression.hpp"
+#include <duckdb/common/unique_ptr.hpp>
 
 namespace duckdb {
 
@@ -26,9 +27,19 @@ DuckLakeMetadataManager::~DuckLakeMetadataManager() {
 }
 optional_ptr<AttachedDatabase> GetDatabase(ClientContext &context, const string &name);
 
+static unordered_map<string /* name */, DuckLakeMetadataManager::create_t> metadata_managers = {};
+
+bool Register(const string &name, DuckLakeMetadataManager::create_t am) {
+	return metadata_managers.emplace(name, am).second;
+}
+
 unique_ptr<DuckLakeMetadataManager> DuckLakeMetadataManager::Create(DuckLakeTransaction &transaction) {
 	auto &catalog = transaction.GetCatalog();
 	auto catalog_type = catalog.MetadataType();
+	auto create = metadata_managers[catalog_type];
+	if (create) {
+		return create(transaction);
+	}
 	if (catalog_type == "postgres" || catalog_type == "postgres_scanner") {
 		return make_uniq<PostgresMetadataManager>(transaction);
 	}
