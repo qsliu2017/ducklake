@@ -51,19 +51,7 @@ string DuckLakeInitializer::GetAttachOptions() {
 
 void DuckLakeInitializer::Initialize() {
 	auto &transaction = DuckLakeTransaction::Get(context, catalog);
-	#if 0
-	// attach the metadata database
-	auto result =
-	    transaction.Query("ATTACH {METADATA_PATH} AS {METADATA_CATALOG_NAME_IDENTIFIER}" + GetAttachOptions());
-	if (result->HasError()) {
-		auto &error_obj = result->GetErrorObject();
-		error_obj.Throw("Failed to attach DuckLake MetaData \"" + catalog.MetadataDatabaseName() + "\" at path + \"" +
-		                catalog.MetadataPath() + "\"");
-	}
-	#endif
-	// explicitly load all secrets - work-around to secret initialization bug
-	transaction.Query("FROM duckdb_secrets()");
-
+	auto &metadata_manager = transaction.GetMetadataManager();
 	bool has_explicit_schema = !options.metadata_schema.empty();
 	if (options.metadata_schema.empty()) {
 		// if the schema is not explicitly set by the user - set it to the default schema in the catalog
@@ -72,15 +60,9 @@ void DuckLakeInitializer::Initialize() {
 	// after the metadata database is attached initialize the ducklake
 	// check if we are loading an existing DuckLake or creating a new one
 	// FIXME: verify that all tables are in the correct format instead
-	auto result = transaction.Query(
-	    "SELECT COUNT(*) FROM duckdb_tables() WHERE database_name='pgduckdb' AND "
-	    "schema_name='ducklake' AND table_name LIKE 'ducklake_%'");
-	if (result->HasError()) {
-		auto &error_obj = result->GetErrorObject();
-		error_obj.Throw("Failed to load DuckLake table data");
-	}
-	auto count = result->Fetch()->GetValue(0, 0).GetValue<idx_t>();
-	if (count == 0) {
+
+	bool is_initialized = metadata_manager.IsInitialized();
+	if (!is_initialized) {
 		if (!options.create_if_not_exists) {
 			throw InvalidInputException("Existing DuckLake at metadata catalog \"%s\" does not exist - and creating a "
 			                            "new DuckLake is explicitly disabled",

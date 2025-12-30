@@ -110,6 +110,7 @@ public:
 
 	DuckLakeMetadataManager &Get(DuckLakeTransaction &transaction);
 
+	virtual bool IsInitialized();
 	//! Initialize a new DuckLake
 	virtual void InitializeDuckLake(bool has_explicit_schema, DuckLakeEncryption encryption);
 	virtual DuckLakeMetadata LoadDuckLake();

@@ -29,7 +29,7 @@ optional_ptr<AttachedDatabase> GetDatabase(ClientContext &context, const string 
 
 static unordered_map<string /* name */, DuckLakeMetadataManager::create_t> metadata_managers = {};
 
-bool Register(const string &name, DuckLakeMetadataManager::create_t am) {
+bool DuckLakeMetadataManager::Register(const string &name, DuckLakeMetadataManager::create_t am) {
 	return metadata_managers.emplace(name, am).second;
 }
 
@@ -58,6 +58,27 @@ FileSystem &DuckLakeMetadataManager::GetFileSystem() {
 	return FileSystem::GetFileSystem(transaction.GetCatalog().GetDatabase());
 }
 
+bool DuckLakeMetadataManager::IsInitialized() {
+	auto &catalog = transaction.GetCatalog();
+	auto result =
+	    transaction.Query("ATTACH {METADATA_PATH} AS {METADATA_CATALOG_NAME_IDENTIFIER}" /*  + GetAttachOptions()*/);
+	if (result->HasError()) {
+		auto &error_obj = result->GetErrorObject();
+		error_obj.Throw("Failed to attach DuckLake MetaData \"" + catalog.MetadataDatabaseName() + "\" at path + \"" +
+		                catalog.MetadataPath() + "\"");
+	}
+	// explicitly load all secrets - work-around to secret initialization bug
+	transaction.Query("FROM duckdb_secrets()");
+	result = transaction.Query("SELECT COUNT(*) FROM duckdb_tables() WHERE database_name='pgduckdb' AND "
+	                           "schema_name='ducklake' AND table_name LIKE 'ducklake_%'");
+	if (result->HasError()) {
+		auto &error_obj = result->GetErrorObject();
+		error_obj.Throw("Failed to load DuckLake table data");
+	}
+	auto count = result->Fetch()->GetValue(0, 0).GetValue<idx_t>();
+	return count == 0;
+}
+
 void DuckLakeMetadataManager::InitializeDuckLake(bool has_explicit_schema, DuckLakeEncryption encryption) {
 	string initialize_query;
 	if (has_explicit_schema) {
@@ -69,7 +90,9 @@ void DuckLakeMetadataManager::InitializeDuckLake(bool has_explicit_schema, DuckL
 	auto &base_data_path = ducklake_catalog.DataPath();
 	string data_path = StorePath(base_data_path);
 	string encryption_str = encryption == DuckLakeEncryption::ENCRYPTED ? "true" : "false";
-	initialize_query += StringUtil::Format(R"(
+	string initial_schema_uuid = transaction.GenerateUUID();
+	initialize_query +=
+	    StringUtil::Format(R"(
 CREATE TABLE {METADATA_CATALOG}.ducklake_metadata(key VARCHAR NOT NULL, value VARCHAR NOT NULL, scope VARCHAR, scope_id BIGINT);
 CREATE TABLE {METADATA_CATALOG}.ducklake_snapshot(snapshot_id BIGINT PRIMARY KEY, snapshot_time TIMESTAMPTZ, schema_version BIGINT, next_catalog_id BIGINT, next_file_id BIGINT);
 CREATE TABLE {METADATA_CATALOG}.ducklake_snapshot_changes(snapshot_id BIGINT PRIMARY KEY, changes_made VARCHAR, author VARCHAR, commit_message VARCHAR, commit_extra_info VARCHAR);
@@ -96,9 +119,9 @@ INSERT INTO {METADATA_CATALOG}.ducklake_schema_versions VALUES (0,0);
 INSERT INTO {METADATA_CATALOG}.ducklake_snapshot VALUES (0, NOW(), 0, 1, 0);
 INSERT INTO {METADATA_CATALOG}.ducklake_snapshot_changes VALUES (0, 'created_schema:"main"',  NULL, NULL, NULL);
 INSERT INTO {METADATA_CATALOG}.ducklake_metadata (key, value) VALUES ('version', '0.3'), ('created_by', 'DuckDB %s'), ('data_path', %s), ('encrypted', '%s');
-INSERT INTO {METADATA_CATALOG}.ducklake_schema VALUES (0, UUID(), 0, NULL, 'main', 'main/', true);
+INSERT INTO {METADATA_CATALOG}.ducklake_schema VALUES (0, '%s'::UUID, 0, NULL, 'main', 'main/', true);
 	)",
-	                                       DuckDB::SourceID(), SQLString(data_path), encryption_str);
+	                       DuckDB::SourceID(), SQLString(data_path), encryption_str, initial_schema_uuid);
 	// TODO: add
 	//	ducklake_sorting_info
 	//	ducklake_sorting_column_info
