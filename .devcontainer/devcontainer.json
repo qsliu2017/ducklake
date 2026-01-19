@@ -4,17 +4,21 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
+  "runArgs": [
+    "--platform=linux/amd64"
+  ],
+  "containerEnv": {
+    "DUCKDB_PLATFORM": "linux_amd64",
+    "VCPKG_TARGET_TRIPLET": "x64-linux",
+    "GEN": "Ninja",
+    "VCPKG_TOOLCHAIN_PATH": "/usr/local/vcpkg/scripts/buildsystems/vcpkg.cmake",
+    "ENABLE_SQLITE_SCANNER": "ON",
+    "ENABLE_POSTGRES_SCANNER": "ON",
+    "BUILD_EXTENSION_TEST_DEPS": "full"
+  },
   "customizations": {
     "vscode": {
-      "extensions": [
-        "ms-vscode.cpptools",
-        "ms-vscode.cpptools-extension-pack",
-        "ms-vscode.cmake-tools",
-        "twxs.cmake",
-        "xaver.clang-format",
-        "xaver.clang-tidy",
-        "ms-vscode.makefile-tools"
-      ],
+      "extensions": [],
       "settings": {
         "C_Cpp.default.compilerPath": "/usr/bin/clang++",
         "C_Cpp.default.cppStandard": "c++17",
@@ -37,14 +41,13 @@
     "ghcr.io/devcontainers/features/git:1": {
       "version": "latest"
     },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "lts"
-    }
+    "ghcr.io/itsmechlark/features/postgresql:1": {
+      "version": "15"
+    },
+    "ghcr.io/msclock/features/vcpkg:2.0.0": {},
+    "ghcr.io/devcontainers-extra/features/ninja-asdf:2": {},
+    "ghcr.io/devcontainers-extra/features/ccache-asdf:2": {}
   },
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
-  "remoteUser": "vscode",
-  "mounts": [
-  ],
-  "runArgs": [
-  ]
+  "postCreateCommand": "",
+  "remoteUser": "vscode"
 }
