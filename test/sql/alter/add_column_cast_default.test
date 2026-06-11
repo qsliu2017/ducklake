@@ -1,0 +1,93 @@
+# name: test/sql/alter/add_column_cast_default.test
+# description: ADD COLUMN defaults that are constants wrapped in a cast ('x'::VARCHAR, typed literals)
+# group: [alter]
+
+require ducklake
+
+require parquet
+
+test-env DUCKLAKE_CONNECTION {TEST_DIR}/{UUID}.db
+
+test-env DATA_PATH {TEST_DIR}
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS ducklake (DATA_PATH '{DATA_PATH}/ducklake_add_col_cast_default')
+
+statement ok
+CREATE TABLE ducklake.test(i INTEGER);
+
+statement ok
+INSERT INTO ducklake.test VALUES (1);
+
+# the parser wraps these in CastExpression over ConstantExpression; they must
+# fold to plain constants instead of being rejected as non-literal defaults
+statement ok
+ALTER TABLE ducklake.test ADD COLUMN c1 VARCHAR DEFAULT 'x'::VARCHAR
+
+statement ok
+ALTER TABLE ducklake.test ADD COLUMN c2 VARCHAR DEFAULT CAST('y' AS VARCHAR)
+
+statement ok
+ALTER TABLE ducklake.test ADD COLUMN d DATE DEFAULT DATE '2020-01-01'
+
+statement ok
+ALTER TABLE ducklake.test ADD COLUMN n INTEGER DEFAULT '7'::INTEGER
+
+# existing rows are backfilled with the folded values
+query IIIII
+SELECT i, c1, c2, d, n FROM ducklake.test
+----
+1	x	y	2020-01-01	7
+
+# new rows pick up the same defaults
+statement ok
+INSERT INTO ducklake.test (i) VALUES (2);
+
+query IIIII
+SELECT i, c1, c2, d, n FROM ducklake.test WHERE i = 2
+----
+2	x	y	2020-01-01	7
+
+# SET DEFAULT on a previously-added column accepts cast-wrapped constants too
+statement ok
+ALTER TABLE ducklake.test ALTER COLUMN c1 SET DEFAULT 'z'::VARCHAR
+
+statement ok
+INSERT INTO ducklake.test (i) VALUES (3);
+
+query II
+SELECT i, c1 FROM ducklake.test WHERE i = 3
+----
+3	z
+
+# a cast of an unconvertible constant still fails loudly
+statement error
+ALTER TABLE ducklake.test ADD COLUMN bad INTEGER DEFAULT 'abc'::INTEGER
+----
+<REGEX>:.*Could not convert.*
+
+# a decoration naming a DIFFERENT type than the column is value-changing
+# ('3.9'::DOUBLE would round to 4) and is not folded
+statement error
+ALTER TABLE ducklake.test ADD COLUMN m INTEGER DEFAULT '3.9'::DOUBLE
+----
+non-literal default
+
+# nested casts are not folded either
+statement error
+ALTER TABLE ducklake.test ADD COLUMN n2 INTEGER DEFAULT '3.9'::DOUBLE::INTEGER
+----
+non-literal default
+
+# TRY_CAST promises NULL-on-failure for its own target type, which folding
+# cannot honor without binding; it is not folded
+statement error
+ALTER TABLE ducklake.test ADD COLUMN tc INTEGER DEFAULT TRY_CAST('42' AS INTEGER)
+----
+non-literal default
+
+# genuinely non-constant defaults are still rejected
+statement error
+ALTER TABLE ducklake.test ADD COLUMN expr_col VARCHAR DEFAULT lower('X')
+----
+non-literal default
